@@ -51,8 +51,14 @@ export {
     autoCategorize,
     categorize,
     buildLearnedMappings,
+    cleanDescription,
+    merchantKey,
     normalizeTransactionName,
+    mappingWriteForEdit,
     loadMappingsFromDB,
     saveMappingToDB,
-    type LearnedMappings
+    deleteMappingFromDB,
+    deleteMappingByKeyFromDB,
+    type LearnedMappings,
+    type MappingWrite,
 } from "./categorizationService";

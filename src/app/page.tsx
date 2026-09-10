@@ -1,11 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import Papa from "papaparse";
 import { initDB, getDB } from "@/lib/db";
-import { categorize, buildLearnedMappings, loadMappingsFromDB, saveMappingToDB, LearnedMappings } from "@/lib/categories";
+import {
+    categorize,
+    loadMappingsFromDB,
+    saveMappingToDB,
+    deleteMappingFromDB,
+    deleteMappingByKeyFromDB,
+    mappingWriteForEdit,
+    merchantKey,
+    LearnedMappings,
+} from "@/lib/categories";
 import { Tab, Transaction } from "@/lib/types";
+import { mapCsvRows } from "@/lib/csvImport";
 import { Dashboard } from "@/components/Dashboard";
 import { DropZone } from "@/components/DropZone";
 import { Header } from "@/components/Header";
@@ -28,9 +38,18 @@ export default function Home() {
     const [activeTab, setActiveTab] = useState<Tab>("table");
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [learnedMappings, setLearnedMappings] = useState<LearnedMappings>(new Map());
+    const learnedMappingsRef = useRef(learnedMappings);
+    learnedMappingsRef.current = learnedMappings;
 
     // Track if detailed changes have been made to avoid saving on initial load
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+    useEffect(() => {
+        const tab = new URLSearchParams(window.location.search).get("tab");
+        if (tab === "dashboard" || tab === "table" || tab === "settings") {
+            setActiveTab(tab);
+        }
+    }, []);
 
     // Initialize database and Tauri file drop listener on component mount
     useEffect(() => {
@@ -123,17 +142,16 @@ export default function Home() {
         try {
             const db = getDB();
 
-            // Load persisted mappings from DB first (survives transaction deletion)
             const dbMappings = await loadMappingsFromDB(db);
 
-            // Load transactions
             const rows = await db.select<Transaction[]>("SELECT * FROM transactions ORDER BY date DESC");
-            setTransactions(rows);
+            setTransactions(rows.map((tx) => ({
+                ...tx,
+                originalCategory: tx.category,
+            })));
 
-            // Build learned mappings by merging DB mappings with confirmed transactions
-            const mappings = buildLearnedMappings(rows, dbMappings);
-            setLearnedMappings(mappings);
-            console.log(`Built learned mappings from ${mappings.size} unique transaction names`);
+            setLearnedMappings(dbMappings);
+            console.log(`Loaded ${dbMappings.size} learned merchant mappings`);
         } catch (e) {
             console.error("Failed to load transactions:", e);
         }
@@ -144,31 +162,16 @@ export default function Home() {
 
         console.log("Raw Import Keys:", Object.keys(rawRows[0]));
 
-        // Helper to find key case-insensitively
-        const findVal = (row: any, keys: string[]) => {
-            const rowKeys = Object.keys(row);
-            for (const k of keys) {
-                const found = rowKeys.find(rk => rk.toLowerCase() === k.toLowerCase());
-                if (found) return row[found];
-            }
-            return null;
-        };
-
-        const mapped: Transaction[] = rawRows.map(row => {
-            const amountStr = findVal(row, ["amount", "amt", "debit", "credit", "value"]);
-            const amount = parseFloat(amountStr || "0");
-            const name = findVal(row, ["description", "desc", "payee", "name", "transaction", "merchant"]) || "Unknown";
-            const date = findVal(row, ["date", "posting date", "transaction date", "time"]) || new Date().toISOString().split('T')[0];
-            const memo = findVal(row, ["memo", "details", "notes"]) || "";
-
-            const category = categorize(name, amount, learnedMappings);
+        const mapped: Transaction[] = mapCsvRows(rawRows).map(({ date, name, amount, memo }) => {
+            const category = categorize(name, amount, learnedMappingsRef.current);
 
             return {
-                date: date,
-                name: name,
-                amount: isNaN(amount) ? 0 : amount,
-                category: category,
-                memo: memo,
+                date,
+                name,
+                amount,
+                category,
+                originalCategory: category,
+                memo,
                 status: "pending" as const
             };
         }).filter(t => t.amount !== 0 || t.name !== "Unknown");
@@ -179,12 +182,25 @@ export default function Home() {
             setTransactions(prev => [...mapped, ...prev]);
             setHasUnsavedChanges(true); // Flag import as needing save
         }
-    }, [learnedMappings]);
+    }, []);
 
     const handleUpdate = (index: number, field: keyof Transaction, value: any) => {
         setTransactions(prev => {
             const copy = [...prev];
             copy[index] = { ...copy[index], [field]: value };
+
+            if (field === "category") {
+                const key = merchantKey(copy[index].name);
+                if (key) {
+                    for (let i = 0; i < copy.length; i++) {
+                        if (i === index) continue;
+                        if (copy[i].status === "pending" && merchantKey(copy[i].name) === key) {
+                            copy[i] = { ...copy[i], category: value };
+                        }
+                    }
+                }
+            }
+
             return copy;
         });
         setHasUnsavedChanges(true);
@@ -207,9 +223,11 @@ export default function Home() {
                     );
                 }
 
-                // Save the category mapping for future auto-categorization
-                if (tx.category && tx.category !== "Uncategorized") {
-                    await saveMappingToDB(db, tx.name, tx.category as any);
+                const write = mappingWriteForEdit(tx.originalCategory, tx.category);
+                if (write.action === "upsert") {
+                    await saveMappingToDB(db, tx.name, write.category);
+                } else if (write.action === "delete") {
+                    await deleteMappingFromDB(db, tx.name);
                 }
             }
 
@@ -225,6 +243,22 @@ export default function Home() {
         setTransactions(prev => prev.filter((_, i) => i !== index));
         setHasUnsavedChanges(true);
     }, []);
+
+    const handleForgetMapping = async (key: string) => {
+        try {
+            const db = getDB();
+            await deleteMappingByKeyFromDB(db, key);
+            setLearnedMappings((prev) => {
+                const next = new Map(prev);
+                next.delete(key);
+                return next;
+            });
+        } catch (e) {
+            console.error("Failed to forget mapping:", e);
+            setErrorMessage("Failed to forget that merchant mapping.");
+            setTimeout(() => setErrorMessage(null), 3000);
+        }
+    };
 
     const handleDeleteAllTransactions = async () => {
         try {
@@ -301,7 +335,11 @@ export default function Home() {
                 )}
                 {activeTab === "settings" && (
                     <div className="flex-1 overflow-y-auto min-h-0">
-                        <SettingsPage onDeleteAllTransactions={handleDeleteAllTransactions} />
+                        <SettingsPage
+                            onDeleteAllTransactions={handleDeleteAllTransactions}
+                            learnedMappings={learnedMappings}
+                            onForgetMapping={handleForgetMapping}
+                        />
                     </div>
                 )}
             </main >

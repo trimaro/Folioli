@@ -9,6 +9,8 @@ export interface Transaction {
     category?: string;
     amount: number;
     status: "pending" | "confirmed";
+    /** In-memory only: category at import/load time, used to detect corrections. */
+    originalCategory?: string;
 }
 
 export type Tab = "dashboard" | "table" | "settings";

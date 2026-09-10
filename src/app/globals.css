@@ -1,5 +1,3 @@
-@import '@malovey/rogue-ui/styles.css';
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -35,6 +33,8 @@
     --ring: 222.2 84% 4.9%;
  
     --radius: 0.5rem;
+    --flow-in: 88 42% 36%;
+    --flow-out: 18 14% 42%;
   }
  
   .dark {
@@ -65,6 +65,8 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+    --flow-in: 84 58% 54%;
+    --flow-out: 16 22% 64%;
   }
 }
 
@@ -80,5 +82,117 @@
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+.dash-shell {
+  position: relative;
+}
+
+.dash-grain {
+  position: relative;
+}
+
+.dash-grain::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.045;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.dark .dash-grain::before {
+  opacity: 0.09;
+  mix-blend-mode: overlay;
+}
+
+.dash-grain > * {
+  position: relative;
+  z-index: 1;
+}
+
+.dash-panel {
+  @apply relative overflow-hidden rounded-2xl border border-border/70 bg-card/50 shadow-[0_1px_0_rgba(255,255,255,0.04)_inset,0_20px_40px_-28px_rgba(0,0,0,0.35)];
+  backdrop-filter: blur(10px);
+}
+
+.dash-kicker {
+  @apply text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground;
+}
+
+.dash-heat-cell {
+  display: block;
+  border-radius: 2px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.heat-0 { background: hsl(var(--muted)); }
+.heat-1 { background: hsl(var(--flow-in) / 0.18); }
+.heat-2 { background: hsl(var(--flow-in) / 0.34); }
+.heat-3 { background: hsl(var(--flow-in) / 0.52); }
+.heat-4 { background: hsl(var(--flow-in) / 0.72); }
+.heat-5 { background: hsl(var(--flow-in) / 0.95); }
+
+.dash-axis-label {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.dash-mosaic-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.dash-mosaic-value {
+  font-size: 11px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+.dash-ring-day {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 18px;
+}
+
+.dash-arc-value {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 28px;
+}
+
+.dash-slope-label {
+  font-size: 10px;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.dash-slope-value {
+  font-size: 10px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+.font-display {
+  font-variant-numeric: lining-nums;
+  font-feature-settings: "ss01" on, "cv11" on;
+}
+
+.dash-draw {
+  animation: dash-reveal 900ms ease both;
+}
+
+@keyframes dash-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-draw {
+    animation: none;
   }
 }

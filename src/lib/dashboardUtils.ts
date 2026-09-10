@@ -1,76 +1,73 @@
-// Dashboard utility functions for financial analytics
-
 import { Transaction } from "./types";
 import { Category } from "./categories";
 
-// Category groupings for cleaner analytics
+export type PeriodKey = "30d" | "90d" | "6m" | "ytd" | "all";
+
+export const PERIODS: { key: PeriodKey; label: string }[] = [
+    { key: "30d", label: "30D" },
+    { key: "90d", label: "90D" },
+    { key: "6m", label: "6M" },
+    { key: "ytd", label: "YTD" },
+    { key: "all", label: "All" },
+];
+
 export const CATEGORY_GROUPS: Record<string, Category[]> = {
     "Food & Dining": ["Groceries", "Dining", "Takeout", "Cafe", "Snacks"],
-    "Bills & Utilities": ["Utilities", "Phone & Internet", "Insurance", "Subscriptions", "Bank Fee", "ATM Withdrawal"],
-    "Rent & Housing": ["Rent"],
-    "Investing": ["Investments"],
-    "Hobbies & Home": ["Hobbies", "Home & Garden", "Clothing", "Electronics", "Books & Records", "Entertainment"],
-    "Transportation": ["Fuel", "Car Payment", "Car Repairs", "Car Wash", "Parking", "Public Transit", "Rideshare"],
-    "Debt": ["Loan Payment"],
-    "Other": ["Education", "Gifts", "Charity", "Other", "Uncategorized", "Healthcare", "Pharmacy", "Fitness", "Personal Care", "Travel", "Hotels", "Flights"],
+    Housing: ["Rent", "Home & Garden"],
+    "Bills & Utilities": ["Utilities", "Phone & Internet", "Insurance", "Subscriptions"],
+    Transportation: ["Fuel", "Car Payment", "Car Repairs", "Car Wash", "Parking", "Public Transit", "Rideshare"],
+    Health: ["Healthcare", "Pharmacy", "Fitness", "Personal Care"],
+    Lifestyle: ["Clothing", "Electronics", "Books & Records", "Hobbies", "Entertainment"],
+    Travel: ["Travel", "Hotels", "Flights"],
+    Financial: ["Investments", "Loan Payment", "Bank Fee", "ATM Withdrawal"],
+    Giving: ["Gifts", "Charity", "Education"],
+    Other: ["Other", "Uncategorized"],
 };
 
-// Pre-compute reverse lookup map: Category -> Group
-// This avoids iterating through arrays every time getCategoryGroup is called (O(1) vs O(N))
 const CATEGORY_TO_GROUP: Record<string, string> = {};
+for (const [group, categories] of Object.entries(CATEGORY_GROUPS)) {
+    for (const cat of categories) CATEGORY_TO_GROUP[cat] = group;
+}
 
-// Initialize reverse lookup
-(function initCategoryMap() {
-    for (const [group, categories] of Object.entries(CATEGORY_GROUPS)) {
-        for (const cat of categories) {
-            CATEGORY_TO_GROUP[cat] = group;
-        }
-    }
-})();
+export const GROUP_COLORS: Record<string, string> = {
+    "Food & Dining": "#C4A574",
+    Housing: "#6B7C8A",
+    "Bills & Utilities": "#8A8178",
+    Transportation: "#5E6F64",
+    Health: "#7D9A7E",
+    Lifestyle: "#B089A0",
+    Travel: "#6A8E9F",
+    Financial: "#B8A369",
+    Giving: "#8E7B9B",
+    Other: "#9A948C",
+};
 
-// Simple cache for date parsing
-// Format "YYYY-MM-DD" or "MM/DD/YYYY" -> Date object
 const DATE_CACHE = new Map<string, Date>();
 
-/**
- * Parse a date string robustly (handles various formats)
- * Memoized version to prevent re-parsing the same date strings 1000s of times
- */
 export function parseDate(dateStr: string): Date | null {
     if (!dateStr) return null;
+    if (DATE_CACHE.has(dateStr)) return DATE_CACHE.get(dateStr)!;
 
-    // Check cache first
-    if (DATE_CACHE.has(dateStr)) {
-        const cached = DATE_CACHE.get(dateStr)!;
-        // Return a clone to avoid mutation side-effects if any code mutates dates (it generally shouldn't)
-        // But for pure read-only dashboard use, returning reference is faster.
-        // Let's be safe and return new Date(cached)? No, overhead.
-        // Assuming dates are treated as immutable value objects in this app.
-        return cached;
+    const iso = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) {
+        const date = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+        if (!isNaN(date.getTime())) {
+            DATE_CACHE.set(dateStr, date);
+            return date;
+        }
     }
 
-    // Try direct parsing first
     let date = new Date(dateStr);
-
-    // Check if valid
     if (!isNaN(date.getTime())) {
         DATE_CACHE.set(dateStr, date);
         return date;
     }
 
-    // Try parsing common formats like "MM/DD/YYYY" or "DD/MM/YYYY"
     const parts = dateStr.split(/[\/\-\.]/);
     if (parts.length === 3) {
-        // Assume MM/DD/YYYY or YYYY-MM-DD
-        const [a, b, c] = parts.map(p => parseInt(p, 10));
-        if (a > 1000) {
-            // YYYY-MM-DD
-            date = new Date(a, b - 1, c);
-        } else if (c > 1000) {
-            // MM/DD/YYYY or DD/MM/YYYY
-            date = new Date(c, a - 1, b);
-        }
-
+        const [a, b, c] = parts.map((p) => parseInt(p, 10));
+        if (a > 1000) date = new Date(a, b - 1, c);
+        else if (c > 1000) date = new Date(c, a - 1, b);
         if (!isNaN(date.getTime())) {
             DATE_CACHE.set(dateStr, date);
             return date;
@@ -80,119 +77,151 @@ export function parseDate(dateStr: string): Date | null {
     return null;
 }
 
-/**
- * Get category group for a specific category
- * Optimized O(1) lookup
- */
+export function formatCurrency(
+    amount: number,
+    opts?: { compact?: boolean; cents?: boolean }
+): string {
+    if (opts?.compact && Math.abs(amount) >= 1000) {
+        return new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+            notation: "compact",
+            maximumFractionDigits: 1,
+        }).format(amount);
+    }
+    const cents = opts?.cents ?? true;
+    return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: cents ? 2 : 0,
+        maximumFractionDigits: cents ? 2 : 0,
+    }).format(amount);
+}
+
+export function formatPercentage(value: number, digits = 1): string {
+    const sign = value > 0 ? "+" : "";
+    return `${sign}${value.toFixed(digits)}%`;
+}
+
 export function getCategoryGroup(category: string | undefined): string {
     if (!category) return "Other";
     return CATEGORY_TO_GROUP[category] || "Other";
 }
 
-/**
- * Get year-over-year comparison data (Latest Year vs Prior Year)
- */
-export function getYoYComparison(transactions: Transaction[]): {
-    currentYear: string;
-    previousYear: string;
-    currentTotal: number;
-    previousTotal: number;
-    change: number;
-    categoryComparison: Array<{
-        group: string;
-        current: number;
-        previous: number;
-        color: string;
-    }>;
-} {
-    // Find the latest transaction year to anchor the comparison
-    const dates = transactions
-        .map(t => parseDate(t.date))
-        .filter((d): d is Date => d !== null);
-
-    let currentYearNum = new Date().getFullYear();
-
-    if (dates.length > 0) {
-        const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
-        currentYearNum = maxDate.getFullYear();
-    }
-
-    const previousYearNum = currentYearNum - 1;
-
-    const currentYearLabel = `${currentYearNum}`;
-    const previousYearLabel = `${previousYearNum}`;
-
-    const currentTx = transactions.filter(tx => {
-        const d = parseDate(tx.date);
-        return d && d.getFullYear() === currentYearNum && tx.amount < 0;
-    });
-
-    const previousTx = transactions.filter(tx => {
-        const d = parseDate(tx.date);
-        return d && d.getFullYear() === previousYearNum && tx.amount < 0;
-    });
-
-    const currentTotal = currentTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-    const previousTotal = previousTx.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-
-    // Group by category
-    const currentByGroup: Record<string, number> = {};
-    const previousByGroup: Record<string, number> = {};
-
-    for (const tx of currentTx) {
-        const group = getCategoryGroup(tx.category);
-        currentByGroup[group] = (currentByGroup[group] || 0) + Math.abs(tx.amount);
-    }
-
-    for (const tx of previousTx) {
-        const group = getCategoryGroup(tx.category);
-        previousByGroup[group] = (previousByGroup[group] || 0) + Math.abs(tx.amount);
-    }
-
-    // Combine and sort
-    const allGroups = new Set([...Object.keys(currentByGroup), ...Object.keys(previousByGroup)]);
-
-    const categoryComparison = Array.from(allGroups).map(group => ({
-        group,
-        current: currentByGroup[group] || 0,
-        previous: previousByGroup[group] || 0,
-        color: GROUP_COLORS[group] || "#94A3B8"
-    })).sort((a, b) => b.current - a.current);
-
-    // Calculate percentage change
-    const change = previousTotal > 0
-        ? ((currentTotal - previousTotal) / previousTotal)
-        : currentTotal > 0 ? 1 : 0;
-
-    return {
-        currentYear: currentYearLabel,
-        previousYear: previousYearLabel,
-        currentTotal,
-        previousTotal,
-        change,
-        categoryComparison
-    };
+export function startOfDay(d: Date): Date {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-// Group colors for charts
-export const GROUP_COLORS: Record<string, string> = {
-    "Food & Dining": "#F59E0B",      // amber
-    "Transportation": "#3B82F6",      // blue
-    "Housing": "#8B5CF6",             // violet
-    "Shopping": "#EC4899",            // pink
-    "Health & Wellness": "#10B981",   // emerald
-    "Entertainment": "#F97316",       // orange
-    "Travel": "#06B6D4",              // cyan
-    "Financial": "#6B7280",           // gray
-    "Other": "#94A3B8",               // slate
-};
+export function toDayKey(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+}
 
-export interface MonthlyData {
-    month: string;        // YYYY-MM format
-    monthLabel: string;   // "Jan", "Feb", etc.
+export function startOfWeek(d: Date): Date {
+    const day = d.getDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    return startOfDay(new Date(d.getFullYear(), d.getMonth(), d.getDate() + mondayOffset));
+}
+
+function addDays(d: Date, n: number): Date {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+}
+
+function daysBetween(a: Date, b: Date): number {
+    return Math.round((startOfDay(b).getTime() - startOfDay(a).getTime()) / 86400000);
+}
+
+export function getAnchorDate(transactions: Transaction[]): Date {
+    let max = 0;
+    for (const tx of transactions) {
+        const d = parseDate(tx.date);
+        if (d && d.getTime() > max) max = d.getTime();
+    }
+    return max ? startOfDay(new Date(max)) : startOfDay(new Date());
+}
+
+export function getEarliestDate(transactions: Transaction[]): Date | null {
+    let min = Infinity;
+    for (const tx of transactions) {
+        const d = parseDate(tx.date);
+        if (d && d.getTime() < min) min = d.getTime();
+    }
+    return Number.isFinite(min) ? startOfDay(new Date(min)) : null;
+}
+
+export function getPeriodRange(
+    key: PeriodKey,
+    anchor: Date,
+    earliest: Date | null
+): { start: Date; end: Date } {
+    const end = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), 23, 59, 59, 999);
+    const start = startOfDay(anchor);
+
+    switch (key) {
+        case "30d":
+            start.setDate(start.getDate() - 29);
+            break;
+        case "90d":
+            start.setDate(start.getDate() - 89);
+            break;
+        case "6m":
+            start.setMonth(start.getMonth() - 6);
+            break;
+        case "ytd":
+            start.setMonth(0, 1);
+            break;
+        case "all":
+            return {
+                start: earliest ?? startOfDay(anchor),
+                end,
+            };
+    }
+
+    return { start, end };
+}
+
+function previousRange(start: Date, end: Date): { start: Date; end: Date } {
+    const length = daysBetween(start, end);
+    const prevEnd = addDays(start, -1);
+    prevEnd.setHours(23, 59, 59, 999);
+    return { start: addDays(startOfDay(prevEnd), -length), end: prevEnd };
+}
+
+export function formatRangeLabel(start: Date, end: Date): string {
+    const sameYear = start.getFullYear() === end.getFullYear();
+    const startFmt = start.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: sameYear ? undefined : "numeric",
+    });
+    const endFmt = end.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+    });
+    return `${startFmt} – ${endFmt}`;
+}
+
+export type FlowGranularity = "day" | "week" | "month";
+
+export interface FlowPoint {
+    key: string;
+    label: string;
+    date: Date;
     income: number;
     expenses: number;
     net: number;
+}
+
+export interface HeatDay {
+    date: Date;
+    iso: string;
+    expenses: number;
+    income: number;
+    net: number;
+    count: number;
 }
 
 export interface CategoryGroupData {
@@ -202,174 +231,267 @@ export interface CategoryGroupData {
     percentage: number;
 }
 
-/**
- * Get transactions for a specific month
- */
-export function getTransactionsForMonth(transactions: Transaction[], year: number, month: number): Transaction[] {
-    return transactions.filter(tx => {
-        const date = parseDate(tx.date);
-        if (!date) return false;
-        return date.getFullYear() === year && date.getMonth() === month;
-    });
+export interface SlopeRow {
+    group: string;
+    previous: number;
+    current: number;
+    color: string;
 }
 
-/**
- * Get all unique months from transactions (sorted chronologically)
- */
-export function getUniqueMonths(transactions: Transaction[]): Array<{ year: number; month: number; label: string }> {
-    const monthsSet = new Map<string, { year: number; month: number; label: string }>();
+export interface MerchantRow {
+    name: string;
+    amount: number;
+    count: number;
+    share: number;
+    cumulative: number;
+}
 
-    for (const tx of transactions) {
+export interface WeekdayPoint {
+    day: string;
+    index: number;
+    expenses: number;
+    count: number;
+}
+
+export interface DashboardModel {
+    empty: boolean;
+    period: PeriodKey;
+    range: { start: Date; end: Date };
+    previousRange: { start: Date; end: Date };
+    rangeLabel: string;
+    totals: {
+        income: number;
+        expenses: number;
+        net: number;
+        count: number;
+        savingsRate: number;
+        dailyBurn: number;
+    };
+    previous: {
+        income: number;
+        expenses: number;
+        net: number;
+        savingsRate: number;
+        count: number;
+    };
+    flow: FlowPoint[];
+    heatmap: HeatDay[];
+    groups: CategoryGroupData[];
+    slopes: SlopeRow[];
+    merchants: MerchantRow[];
+    weekdays: WeekdayPoint[];
+    peakWeekday: string;
+}
+
+function inRange(date: Date, start: Date, end: Date): boolean {
+    const t = date.getTime();
+    return t >= start.getTime() && t <= end.getTime();
+}
+
+function bucketMeta(d: Date, granularity: FlowGranularity): { key: string; label: string; date: Date } {
+    if (granularity === "day") {
+        return {
+            key: toDayKey(d),
+            label: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            date: startOfDay(d),
+        };
+    }
+    if (granularity === "week") {
+        const week = startOfWeek(d);
+        return {
+            key: toDayKey(week),
+            label: week.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            date: week,
+        };
+    }
+    const monthDate = new Date(d.getFullYear(), d.getMonth(), 1);
+    return {
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+        label: monthDate.toLocaleDateString("en-US", { month: "short" }),
+        date: monthDate,
+    };
+}
+
+function enumerateBuckets(start: Date, end: Date, granularity: FlowGranularity): FlowPoint[] {
+    const points: FlowPoint[] = [];
+    if (granularity === "day") {
+        for (let d = startOfDay(start); d.getTime() <= end.getTime(); d = addDays(d, 1)) {
+            const meta = bucketMeta(d, "day");
+            points.push({ ...meta, income: 0, expenses: 0, net: 0 });
+        }
+        return points;
+    }
+    if (granularity === "week") {
+        for (let d = startOfWeek(start); d.getTime() <= end.getTime(); d = addDays(d, 7)) {
+            const meta = bucketMeta(d, "week");
+            points.push({ ...meta, income: 0, expenses: 0, net: 0 });
+        }
+        return points;
+    }
+    let d = new Date(start.getFullYear(), start.getMonth(), 1);
+    const last = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (d.getTime() <= last.getTime()) {
+        const meta = bucketMeta(d, "month");
+        points.push({ ...meta, income: 0, expenses: 0, net: 0 });
+        d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    }
+    return points;
+}
+
+function savingsRate(income: number, expenses: number): number {
+    if (income <= 0) return expenses > 0 ? -100 : 0;
+    return ((income - expenses) / income) * 100;
+}
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+export function buildDashboardModel(
+    transactions: Transaction[],
+    period: PeriodKey
+): DashboardModel {
+    const filtered = transactions.filter(
+        (tx) => tx.status === "confirmed" && tx.category !== "Account Transfer"
+    );
+    const anchor = getAnchorDate(filtered);
+    const earliest = getEarliestDate(filtered);
+    const range = getPeriodRange(period, anchor, earliest);
+    const prev = previousRange(range.start, range.end);
+    const span = Math.max(1, daysBetween(range.start, range.end) + 1);
+    const granularity: FlowGranularity = span <= 45 ? "day" : span <= 210 ? "week" : "month";
+
+    const flow = enumerateBuckets(range.start, range.end, granularity);
+    const flowIndex = new Map(flow.map((p, i) => [p.key, i]));
+
+    const heatmapMap = new Map<string, HeatDay>();
+    const groupTotals: Record<string, number> = {};
+    const prevGroupTotals: Record<string, number> = {};
+    const merchantMap = new Map<string, { amount: number; count: number }>();
+    const weekdayTotals = WEEKDAYS.map((day, index) => ({ day, index, expenses: 0, count: 0 }));
+
+    const totals = { income: 0, expenses: 0, net: 0, count: 0, savingsRate: 0, dailyBurn: 0 };
+    const previous = { income: 0, expenses: 0, net: 0, savingsRate: 0, count: 0 };
+
+    for (const tx of filtered) {
         const date = parseDate(tx.date);
         if (!date) continue;
+        const current = inRange(date, range.start, range.end);
+        const prior = inRange(date, prev.start, prev.end);
+        if (!current && !prior) continue;
 
-        const year = date.getFullYear();
-        const month = date.getMonth();
-        const key = `${year}-${month}`;
+        const abs = Math.abs(tx.amount);
+        const isIncome = tx.amount > 0;
 
-        if (!monthsSet.has(key)) {
-            const label = date.toLocaleString('default', { month: 'short' });
-            monthsSet.set(key, { year, month, label });
+        if (current) {
+            totals.count += 1;
+            if (isIncome) totals.income += tx.amount;
+            else totals.expenses += abs;
+
+            const meta = bucketMeta(date, granularity);
+            const idx = flowIndex.get(meta.key);
+            if (idx !== undefined) {
+                if (isIncome) flow[idx].income += tx.amount;
+                else flow[idx].expenses += abs;
+            }
+
+            const iso = toDayKey(date);
+            let heat = heatmapMap.get(iso);
+            if (!heat) {
+                heat = { date: startOfDay(date), iso, expenses: 0, income: 0, net: 0, count: 0 };
+                heatmapMap.set(iso, heat);
+            }
+            heat.count += 1;
+            if (isIncome) heat.income += tx.amount;
+            else heat.expenses += abs;
+            heat.net = heat.income - heat.expenses;
+
+            if (!isIncome) {
+                const group = getCategoryGroup(tx.category);
+                groupTotals[group] = (groupTotals[group] || 0) + abs;
+                const merchant = tx.name.trim() || "Unknown";
+                const row = merchantMap.get(merchant) ?? { amount: 0, count: 0 };
+                row.amount += abs;
+                row.count += 1;
+                merchantMap.set(merchant, row);
+                const weekdayIdx = date.getDay() === 0 ? 6 : date.getDay() - 1;
+                weekdayTotals[weekdayIdx].expenses += abs;
+                weekdayTotals[weekdayIdx].count += 1;
+            }
+        } else if (prior) {
+            previous.count += 1;
+            if (isIncome) previous.income += tx.amount;
+            else {
+                previous.expenses += abs;
+                const group = getCategoryGroup(tx.category);
+                prevGroupTotals[group] = (prevGroupTotals[group] || 0) + abs;
+            }
         }
     }
 
-    return Array.from(monthsSet.values()).sort((a, b) => {
-        if (a.year !== b.year) return a.year - b.year;
-        return a.month - b.month;
-    });
-}
+    for (const point of flow) point.net = point.income - point.expenses;
+    totals.net = totals.income - totals.expenses;
+    totals.savingsRate = savingsRate(totals.income, totals.expenses);
+    totals.dailyBurn = totals.expenses / span;
+    previous.net = previous.income - previous.expenses;
+    previous.savingsRate = savingsRate(previous.income, previous.expenses);
 
-/**
- * Calculate monthly totals for income, expenses, and net
- */
-export function getMonthlyTotals(transactions: Transaction[], monthsBack: number = 6): MonthlyData[] {
-    const result: MonthlyData[] = [];
-    const now = new Date();
-
-    for (let i = monthsBack - 1; i >= 0; i--) {
-        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const year = date.getFullYear();
-        const month = date.getMonth();
-        const monthLabel = date.toLocaleString('default', { month: 'short' });
-        const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
-
-        const monthTransactions = getTransactionsForMonth(transactions, year, month);
-
-        const income = monthTransactions
-            .filter(tx => tx.amount > 0)
-            .reduce((sum, tx) => sum + tx.amount, 0);
-
-        const expenses = monthTransactions
-            .filter(tx => tx.amount < 0)
-            .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-
-        result.push({
-            month: monthKey,
-            monthLabel,
-            income,
-            expenses,
-            net: income - expenses,
-        });
-    }
-
-    return result;
-}
-
-/**
- * Get current month's totals
- */
-export function getCurrentMonthTotals(transactions: Transaction[]): { income: number; expenses: number; net: number } {
-    const now = new Date();
-    const monthTransactions = getTransactionsForMonth(transactions, now.getFullYear(), now.getMonth());
-
-    const income = monthTransactions
-        .filter(tx => tx.amount > 0)
-        .reduce((sum, tx) => sum + tx.amount, 0);
-
-    const expenses = monthTransactions
-        .filter(tx => tx.amount < 0)
-        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-
-    return { income, expenses, net: income - expenses };
-}
-
-/**
- * Get previous month's totals for comparison
- */
-export function getPreviousMonthTotals(transactions: Transaction[]): { income: number; expenses: number; net: number } {
-    const now = new Date();
-    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const monthTransactions = getTransactionsForMonth(transactions, prevMonth.getFullYear(), prevMonth.getMonth());
-
-    const income = monthTransactions
-        .filter(tx => tx.amount > 0)
-        .reduce((sum, tx) => sum + tx.amount, 0);
-
-    const expenses = monthTransactions
-        .filter(tx => tx.amount < 0)
-        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-
-    return { income, expenses, net: income - expenses };
-}
-
-/**
- * Calculate month-over-month percentage change
- */
-export function getMoMChange(current: number, previous: number): number {
-    if (previous === 0) return current > 0 ? 100 : 0;
-    return ((current - previous) / previous) * 100;
-}
-
-/**
- * Get spending grouped by category groups for current month
- */
-export function getCategoryGroupSpending(transactions: Transaction[], year?: number, month?: number): CategoryGroupData[] {
-    const now = new Date();
-    const targetYear = year ?? now.getFullYear();
-    const targetMonth = month ?? now.getMonth();
-
-    const monthTransactions = getTransactionsForMonth(transactions, targetYear, targetMonth)
-        .filter(tx => tx.amount < 0); // Only expenses
-
-    const groupTotals: Record<string, number> = {};
-
-    for (const tx of monthTransactions) {
-        const group = getCategoryGroup(tx.category);
-        groupTotals[group] = (groupTotals[group] || 0) + Math.abs(tx.amount);
-    }
-
-    const totalExpenses = Object.values(groupTotals).reduce((sum, val) => sum + val, 0);
-
-    const result: CategoryGroupData[] = Object.entries(groupTotals)
+    const groups: CategoryGroupData[] = Object.entries(groupTotals)
         .map(([group, total]) => ({
             group,
             total,
-            color: GROUP_COLORS[group] || "#94A3B8",
-            percentage: totalExpenses > 0 ? (total / totalExpenses) * 100 : 0,
+            color: GROUP_COLORS[group] || GROUP_COLORS.Other,
+            percentage: totals.expenses > 0 ? (total / totals.expenses) * 100 : 0,
         }))
         .sort((a, b) => b.total - a.total);
 
-    return result;
+    const slopeNames = new Set([...Object.keys(groupTotals), ...Object.keys(prevGroupTotals)]);
+    const slopes: SlopeRow[] = Array.from(slopeNames)
+        .map((group) => ({
+            group,
+            previous: prevGroupTotals[group] || 0,
+            current: groupTotals[group] || 0,
+            color: GROUP_COLORS[group] || GROUP_COLORS.Other,
+        }))
+        .sort((a, b) => Math.max(b.current, b.previous) - Math.max(a.current, a.previous))
+        .slice(0, 7);
+
+    const merchantSorted = Array.from(merchantMap.entries())
+        .map(([name, row]) => ({ name, ...row }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 8);
+
+    let running = 0;
+    const merchants: MerchantRow[] = merchantSorted.map((row) => {
+        running += row.amount;
+        return {
+            ...row,
+            share: totals.expenses > 0 ? row.amount / totals.expenses : 0,
+            cumulative: totals.expenses > 0 ? running / totals.expenses : 0,
+        };
+    });
+
+    const peakWeekday =
+        weekdayTotals.reduce((best, d) => (d.expenses > best.expenses ? d : best), weekdayTotals[0])
+            ?.day ?? "—";
+
+    return {
+        empty: filtered.length === 0,
+        period,
+        range,
+        previousRange: prev,
+        rangeLabel: formatRangeLabel(range.start, range.end),
+        totals,
+        previous,
+        flow,
+        heatmap: Array.from(heatmapMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime()),
+        groups,
+        slopes,
+        merchants,
+        weekdays: weekdayTotals,
+        peakWeekday,
+    };
 }
 
-
-
-/**
- * Format currency for display
- */
-export function formatCurrency(amount: number): string {
-    return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-    }).format(amount);
-}
-
-/**
- * Format percentage for display
- */
-export function formatPercentage(value: number): string {
-    const sign = value >= 0 ? '+' : '';
-    return `${sign}${value.toFixed(1)}%`;
+export function deltaRatio(current: number, previous: number): number | null {
+    if (previous === 0) return current === 0 ? 0 : null;
+    return (current - previous) / previous;
 }

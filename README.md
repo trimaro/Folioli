@@ -1,22 +1,27 @@
 # Folioli 🌿
 
-A modern, privacy-focused Personal Finance Tracker built for desktop.
+A modern, privacy-focused Personal Finance Tracker built with web technologies for the desktop.
 
-## Overview
-Folioli is a desktop application designed to help you track your income and expenses with ease. It features automated category mapping, intuitive data visualization, and keeps your data 100% local on your machine.
+## Goal
+
+Folioli is built to give users complete control over their financial data. Unlike cloud-based finance applications that store your transactions on remote servers, Folioli provides the smooth, intuitive experience of a modern web application while keeping your data 100% local and secure on your machine.
+
+## Function
+
+The application functions by letting users import their bank statements (via CSV) through a simple drag-and-drop interface. Once imported, Folioli automatically categorizes future transactions by learning from your manual edits. It features an interactive dashboard that visualizes income versus expenses over time, alongside a detailed, sortable, and editable transaction table. All user data, including learned category mappings, is securely persisted in a local SQLite database.
 
 ## Tech Stack
-- **Framework:** [Tauri](https://tauri.app/) (v2)
-- **Frontend:** [Next.js](https://nextjs.org/) (React 19)
+- **Framework:** [Tauri](https://tauri.app/) (v2) for the native desktop wrapper
+- **Frontend:** [Next.js](https://nextjs.org/) (React 19) powering the web-based interface
 - **Language:** TypeScript
-- **Database:** SQLite (local storage)
-- **Styling:** TailwindCSS
+- **Database:** SQLite (local DB on your device)
+- **Styling:** Tailwind CSS
 
-## Features
-- 📊 **Transaction Tracking:** Easily import and manage your financial transactions.
-- 🏷️ **Smart Categorization:** Learns from your edits to automatically map future transactions.
-- 📈 **Visualizations:** Insightful charts to track income vs. expenses.
-- 🔒 **Privacy First:** All data is stored locally in an SQLite database. No cloud uploads.
+## Core Features
+- 📊 **Transaction Tracking:** Import via drag-and-drop, manage, and edit financial transactions.
+- 🏷️ **Smart Categorization:** Trains a local mapping system so future transactions are categorized automatically.
+- 📈 **Visualizations:** Insightful dashboard charts to track income vs. expenses dynamically.
+- 🔒 **Privacy First:** All data is stored strictly locally. No cloud uploads, ensuring peace of mind.
 
 ## Development
 

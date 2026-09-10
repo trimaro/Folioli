@@ -1,12 +1,19 @@
-import { Trash2, AlertTriangle, Moon, Sun, Monitor, User, LogOut, Shield, Database, Bell, CreditCard, Bot, Upload } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Trash2, AlertTriangle, Moon, Sun, Monitor, User, LogOut, Shield, Database, Bell, CreditCard, Bot, Upload, Tags, ChevronDown } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import { useTheme } from "@/components/ThemeProvider";
+import { LearnedMappings } from "@/lib/categories";
 
 interface SettingsPageProps {
     onDeleteAllTransactions: () => Promise<void>;
+    learnedMappings?: LearnedMappings;
+    onForgetMapping?: (key: string) => Promise<void>;
 }
 
-export function SettingsPage({ onDeleteAllTransactions }: SettingsPageProps) {
+export function SettingsPage({
+    onDeleteAllTransactions,
+    learnedMappings,
+    onForgetMapping,
+}: SettingsPageProps) {
     // State for all settings
     const [currency, setCurrency] = useState("USD");
     const { theme, setTheme } = useTheme();
@@ -18,9 +25,13 @@ export function SettingsPage({ onDeleteAllTransactions }: SettingsPageProps) {
     });
     const [backupFreq, setBackupFreq] = useState("weekly");
 
-    // Danger Zone State
+    const learnedList = useMemo(() => {
+        if (!learnedMappings) return [];
+        return [...learnedMappings.entries()].sort(([a], [b]) => a.localeCompare(b));
+    }, [learnedMappings]);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [learnedOpen, setLearnedOpen] = useState(false);
 
     // Load settings from localStorage on mount
     useEffect(() => {
@@ -85,6 +96,64 @@ export function SettingsPage({ onDeleteAllTransactions }: SettingsPageProps) {
             <h2 className="text-2xl font-bold text-foreground mb-8">Settings</h2>
 
             <div className="space-y-8">
+                {/* Learned merchants */}
+                <section>
+                    <div className="bg-card rounded-2xl shadow-sm border border-border">
+                        <button
+                            type="button"
+                            onClick={() => setLearnedOpen((open) => !open)}
+                            aria-expanded={learnedOpen}
+                            className={`sticky top-0 z-10 w-full p-4 flex items-center justify-between gap-3 bg-card text-left hover:bg-muted/60 transition-colors ${
+                                learnedOpen ? "rounded-t-2xl border-b border-border shadow-sm" : "rounded-2xl"
+                            }`}
+                        >
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="p-2 bg-lime-50 dark:bg-lime-900/20 text-lime-700 dark:text-lime-400 rounded-lg flex-shrink-0">
+                                    <Tags className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="font-medium text-foreground">Learned merchants</p>
+                                    <p className="text-sm text-muted-foreground">
+                                        {learnedList.length === 0
+                                            ? "Merchants you recategorize will appear here"
+                                            : `${learnedList.length} remembered ${learnedList.length === 1 ? "merchant" : "merchants"}`}
+                                    </p>
+                                </div>
+                            </div>
+                            <ChevronDown
+                                className={`w-5 h-5 text-muted-foreground flex-shrink-0 transition-transform ${learnedOpen ? "" : "-rotate-90"}`}
+                            />
+                        </button>
+                        {learnedOpen && (
+                            learnedList.length === 0 ? (
+                                <p className="p-4 text-sm text-muted-foreground">
+                                    No learned merchants yet. When you correct a category and save, that merchant will be remembered here.
+                                </p>
+                            ) : (
+                                <ul className="divide-y divide-border">
+                                    {learnedList.map(([key, category]) => (
+                                        <li key={key} className="p-4 flex items-center justify-between gap-4">
+                                            <div className="min-w-0">
+                                                <p className="font-medium text-foreground truncate">{key}</p>
+                                                <p className="text-sm text-muted-foreground">{category}</p>
+                                            </div>
+                                            {onForgetMapping && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onForgetMapping(key)}
+                                                    className="text-sm font-medium text-red-600 dark:text-red-400 hover:underline flex-shrink-0"
+                                                >
+                                                    Forget
+                                                </button>
+                                            )}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )
+                        )}
+                    </div>
+                </section>
+
                 {/* General Settings */}
                 <section>
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4 pl-1">General</h3>
